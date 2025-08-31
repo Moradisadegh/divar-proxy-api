@@ -4,12 +4,12 @@ export default async function handler(request, response) {
   // CORS Headers
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-device-id'); // Allow device-id header
 
   if (request.method === 'OPTIONS') {
     return response.status(200).end();
   }
-  
+
   const params = request.method === 'POST' ? request.body : request.query;
   const { city, cat, q, min_price, max_price, max_age_h } = params;
 
@@ -20,26 +20,32 @@ export default async function handler(request, response) {
   }
 
   const divarApiUrl = `https://api.divar.ir/v8/web-search/${city || 'tehran'}/${cat || ''}`;
+
+  // --- START OF PAYLOAD CHANGE ---
+  // **CRITICAL FIX**: Replicating the structure sent by Divar's website.
+  // 1. Added 'page: 1' which seems to be mandatory.
+  // 2. Removed 'last-post-date' as it might be causing issues.
   const requestBody = {
-    json_schema: {
-      query: q || '',
-      ...(min_price && { price: { min: parseInt(min_price, 10) } }),
-      ...(max_price && { price: { ...((min_price && { min: parseInt(min_price, 10) }) || {}), max: parseInt(max_price, 10) } }),
+    "page": 1, // Add page parameter
+    "json_schema": {
+      "query": q || '',
+      ...(min_price && { "price": { "min": parseInt(min_price, 10) } }),
+      ...(max_price && { "price": { ...((min_price && { "min": parseInt(min_price, 10) }) || {}), "max": parseInt(max_price, 10) } }),
     },
-    "last-post-date": new Date().getTime() * 1000,
   };
+  // --- END OF PAYLOAD CHANGE ---
 
   try {
     const apiResponse = await fetch(divarApiUrl, {
       method: 'POST',
-      // --- START OF CHANGE ---
-      // **CRITICAL FIX**: Add headers to simulate a real browser request.
-      // This is necessary to avoid the "Update your app" blocking view from Divar.
+      // --- START OF HEADER CHANGE ---
+      // Adding more headers to better simulate a real browser request
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+        'x-device-id': 'browser-e3c54433-22db-4c59-a68f-933333333333' // A random but valid-looking device ID
       },
-      // --- END OF CHANGE ---
+      // --- END OF HEADER CHANGE ---
       body: JSON.stringify(requestBody),
     });
 
@@ -78,7 +84,7 @@ export default async function handler(request, response) {
       items: standardizedItems,
       query: params,
       count: standardizedItems.length,
-      source: 'Vercel Proxy (v3 - with User-Agent)',
+      source: 'Vercel Proxy (v4 - full headers)',
     });
 
   } catch (error) {
