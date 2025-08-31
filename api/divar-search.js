@@ -1,58 +1,36 @@
 // File: /api/divar-search.js
 
-/**
- * Vercel Serverless Function to act as a proxy for Divar's search API.
- * It takes search parameters from the query string, fetches data from Divar,
- * standardizes the output, and returns it as JSON.
- *
- * How to call:
- * https://<your-vercel-app-url>/api/divar-search?city=tehran&q=macbook%20pro
- */
 export default async function handler(request, response) {
-  // 1. Set CORS headers to allow requests from any origin (useful for testing)
+  // ... (headers and CORS handling remain the same) ...
   response.setHeader('Access-Control-Allow-Origin', '*');
-  response.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  response.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // Handle pre-flight OPTIONS requests for CORS
   if (request.method === 'OPTIONS') {
     return response.status(200).end();
   }
 
-  // 2. Extract query parameters from the incoming request URL
-  const { city, cat, q, min_price, max_price, max_age_h } = request.query;
+  // Use request.body for POST requests (from n8n) and request.query for GET (for testing)
+  const params = request.method === 'POST' ? request.body : request.query;
+  const { city, cat, q, min_price, max_price, max_age_h } = params;
 
-  // At least city or query must be present
   if (!city && !q) {
     return response.status(400).json({
       error: 'Bad Request: At least "city" or "q" query parameter is required.',
     });
   }
 
-  // 3. Construct the Divar API URL
-  // We use a known public endpoint for search.
   const divarApiUrl = `https://api.divar.ir/v8/web-search/${city || 'tehran'}/${cat || ''}`;
-
-  // 4. Prepare the JSON payload for the POST request to Divar
   const requestBody = {
     json_schema: {
       query: q || '',
       ...(min_price && { price: { min: parseInt(min_price, 10) } }),
       ...(max_price && { price: { ...((min_price && { min: parseInt(min_price, 10) }) || {}), max: parseInt(max_price, 10) } }),
     },
-    // The "last-post-date" is used for pagination, but we fetch the first page.
-    "last-post-date": new Date().getTime() * 1000, 
+    "last-post-date": new Date().getTime() * 1000,
   };
-  
-  // 5. Calculate max age in Unix timestamp (nanoseconds)
-  let maxAgeTimestamp = 0;
-  if (max_age_h && !isNaN(parseInt(max_age_h))) {
-    const hoursInMilliseconds = parseInt(max_age_h) * 60 * 60 * 1000;
-    maxAgeTimestamp = (new Date().getTime() - hoursInMilliseconds) * 1000;
-  }
 
   try {
-    // 6. Fetch data from Divar's API using a POST request
     const apiResponse = await fetch(divarApiUrl, {
       method: 'POST',
       headers: {
@@ -61,49 +39,53 @@ export default async function handler(request, response) {
       body: JSON.stringify(requestBody),
     });
 
-    // Handle non-successful responses from Divar
-    if (!apiResponse.ok) {
-      const errorText = await apiResponse.text();
-      throw new Error(`Divar API responded with status ${apiResponse.status}: ${errorText}`);
-    }
-
     const data = await apiResponse.json();
 
-    // 7. Process and standardize the results
+    // --- START OF CHANGE ---
+    // **CRITICAL CHECK**: Verify the response structure from Divar before processing.
+    // If 'web_widgets' doesn't exist, it means Divar returned an error or an unexpected format.
+    if (!data || !data.web_widgets || !data.web_widgets.post_list) {
+      console.error('Unexpected Divar API response structure:', JSON.stringify(data, null, 2));
+      // Return a structured error to n8n for easier debugging.
+      return response.status(502).json({
+        error: 'Bad Gateway: Unexpected response from Divar API.',
+        message: "The response from Divar did not contain 'web_widgets.post_list'. This might be due to an invalid city slug or other API errors.",
+        divar_response: data, // Include the actual response from Divar for debugging.
+        sent_payload: requestBody,
+      });
+    }
+    // --- END OF CHANGE ---
+
     const items = data.web_widgets.post_list
-      .filter(item => item.widget_type === 'POST_ROW') // Filter only actual posts
-      .map(item => item.data)
-      .filter(item => !maxAgeTimestamp || item.action.payload.post_token.endsWith(String(Math.floor(maxAgeTimestamp / 1e9)))) // This is a trick to compare timestamps roughly
-      .map(item => ({
-        id: item.action.payload.token, // Unique token for each post
-        title: item.title,
-        price: item.action.payload.web_info.price, // Price is an integer
-        city: item.action.payload.web_info.city_persian,
-        district: item.action.payload.web_info.district_persian,
-        posted_at: new Date(parseInt(item.action.payload.token.substring(0, 13))), // Extract timestamp from token
-        url: `https://divar.ir/v/${item.action.payload.token}`,
-      }));
+      .filter(item => item.widget_type === 'POST_ROW')
+      .map(item => item.data);
+
+    let standardizedItems = items.map(item => ({
+      id: item.action.payload.token,
+      title: item.title,
+      price: item.action?.payload?.web_info?.price || 0, // Safer access to price
+      city: item.action?.payload?.web_info?.city_persian,
+      district: item.action?.payload?.web_info?.district_persian,
+      posted_at: new Date(parseInt(item.action.payload.token.substring(0, 13))),
+      url: `https://divar.ir/v/${item.action.payload.token}`,
+    }));
       
-    // Filter by max_age_h more accurately if provided
-    let filteredItems = items;
     if (max_age_h) {
-        const maxAgeDate = new Date(Date.now() - parseInt(max_age_h) * 3600 * 1000);
-        filteredItems = items.filter(item => item.posted_at >= maxAgeDate);
+        const maxAgeDate = new Date(Date.now() - parseInt(max_age_h, 10) * 3600 * 1000);
+        standardizedItems = standardizedItems.filter(item => item.posted_at >= maxAgeDate);
     }
 
-
-    // 8. Send the standardized data back to the n8n workflow
     response.status(200).json({
-      items: filteredItems,
-      query: request.query,
-      count: filteredItems.length,
-      source: 'Vercel Proxy',
+      items: standardizedItems,
+      query: params,
+      count: standardizedItems.length,
+      source: 'Vercel Proxy (v2)',
     });
 
   } catch (error) {
-    console.error('Error fetching from Divar:', error);
+    console.error('Error in Vercel function:', error);
     response.status(500).json({
-      error: 'Internal Server Error',
+      error: 'Internal Server Error in Vercel Function',
       message: error.message,
     });
   }
