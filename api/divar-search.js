@@ -1,7 +1,7 @@
 // File: /api/divar-search.js
 
 export default async function handler(request, response) {
-  // ... (headers and CORS handling remain the same) ...
+  // CORS Headers
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -9,8 +9,7 @@ export default async function handler(request, response) {
   if (request.method === 'OPTIONS') {
     return response.status(200).end();
   }
-
-  // Use request.body for POST requests (from n8n) and request.query for GET (for testing)
+  
   const params = request.method === 'POST' ? request.body : request.query;
   const { city, cat, q, min_price, max_price, max_age_h } = params;
 
@@ -33,28 +32,28 @@ export default async function handler(request, response) {
   try {
     const apiResponse = await fetch(divarApiUrl, {
       method: 'POST',
+      // --- START OF CHANGE ---
+      // **CRITICAL FIX**: Add headers to simulate a real browser request.
+      // This is necessary to avoid the "Update your app" blocking view from Divar.
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
       },
+      // --- END OF CHANGE ---
       body: JSON.stringify(requestBody),
     });
 
     const data = await apiResponse.json();
 
-    // --- START OF CHANGE ---
-    // **CRITICAL CHECK**: Verify the response structure from Divar before processing.
-    // If 'web_widgets' doesn't exist, it means Divar returned an error or an unexpected format.
     if (!data || !data.web_widgets || !data.web_widgets.post_list) {
       console.error('Unexpected Divar API response structure:', JSON.stringify(data, null, 2));
-      // Return a structured error to n8n for easier debugging.
       return response.status(502).json({
         error: 'Bad Gateway: Unexpected response from Divar API.',
         message: "The response from Divar did not contain 'web_widgets.post_list'. This might be due to an invalid city slug or other API errors.",
-        divar_response: data, // Include the actual response from Divar for debugging.
+        divar_response: data,
         sent_payload: requestBody,
       });
     }
-    // --- END OF CHANGE ---
 
     const items = data.web_widgets.post_list
       .filter(item => item.widget_type === 'POST_ROW')
@@ -63,7 +62,7 @@ export default async function handler(request, response) {
     let standardizedItems = items.map(item => ({
       id: item.action.payload.token,
       title: item.title,
-      price: item.action?.payload?.web_info?.price || 0, // Safer access to price
+      price: item.action?.payload?.web_info?.price || 0,
       city: item.action?.payload?.web_info?.city_persian,
       district: item.action?.payload?.web_info?.district_persian,
       posted_at: new Date(parseInt(item.action.payload.token.substring(0, 13))),
@@ -79,7 +78,7 @@ export default async function handler(request, response) {
       items: standardizedItems,
       query: params,
       count: standardizedItems.length,
-      source: 'Vercel Proxy (v2)',
+      source: 'Vercel Proxy (v3 - with User-Agent)',
     });
 
   } catch (error) {
