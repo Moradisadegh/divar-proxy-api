@@ -1,23 +1,31 @@
-// api/telegram-webhook.ts
-import { NextApiRequest, NextApiResponse } from 'next';
+import { VercelRequest, VercelResponse } from '@vercel/node';
+import fetch from 'node-fetch';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).send('Method Not Allowed');
+  }
 
-  const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
-  if (!N8N_WEBHOOK_URL) return res.status(500).json({ error: 'N8N_WEBHOOK_URL not set' });
+  const n8nUrl = process.env.N8N_WEBHOOK_URL;
+  if (!n8nUrl) {
+    return res.status(500).send('N8N_WEBHOOK_URL not set');
+  }
 
   try {
-    const response = await fetch(N8N_WEBHOOK_URL, {
+    const response = await fetch(n8nUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req.body),
+      headers: { 'Content-Type': 'application/json' },
     });
 
-    if (!response.ok) throw new Error(`n8n error: ${response.status}`);
-    res.status(200).json({ status: 'forwarded' });
+    if (!response.ok) {
+      throw new Error(`n8n error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.status(200).json(data);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: (error as Error).message });
+    res.status(500).send(error.message);
   }
 }
