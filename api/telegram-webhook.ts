@@ -6,8 +6,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).send('Method Not Allowed');
   }
 
-  const n8nUrl = process.env.N8N_WEBHOOK_URL; // e.g., https://mykasbai.ir/n8n/webhook/divar-telegram-webhook
-  console.log(`Forwarding to n8n: ${n8nUrl}`); // Log URL for debugging
+  // >> خط جدید و مهم برای دیباگ <<
+  console.log("Received body from Telegram:", JSON.stringify(req.body, null, 2));
+
+  const n8nUrl = process.env.N8N_WEBHOOK_URL;
+  console.log(`Forwarding to n8n: ${n8nUrl}`);
 
   try {
     const response = await fetch(n8nUrl, {
@@ -17,7 +20,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const data = await response.json();
-    console.log(`n8n response: ${JSON.stringify(data)}`); // Log full response
+    console.log(`n8n response: ${JSON.stringify(data)}`);
 
     if (!response.ok) {
       throw new Error(`n8n error: ${response.status}`);
