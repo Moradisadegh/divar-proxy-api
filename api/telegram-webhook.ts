@@ -1,13 +1,10 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import { NextApiRequest, NextApiResponse } from 'next'; // <--- تغییر اینجاست
 import fetch from 'node-fetch';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) { // <--- و اینجا
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
   }
-
-  // >> خط جدید و مهم برای دیباگ <<
-  console.log("Received body from Telegram:", JSON.stringify(req.body, null, 2));
 
   const n8nUrl = process.env.N8N_WEBHOOK_URL;
   console.log(`Forwarding to n8n: ${n8nUrl}`);
@@ -32,3 +29,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(500).send('Internal Server Error');
   }
 }
+
