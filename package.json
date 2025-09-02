@@ -11,8 +11,8 @@
     "next": "latest",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "node-fetch": "^2.7.0"  // <-- این خط را اضافه کنید
-  }
+    "node-fetch": "^2.7.0"  
+  },
   "devDependencies": {
     "typescript": "^5.2.2",
     "@types/node": "20.5.7",
