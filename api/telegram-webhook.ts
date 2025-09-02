@@ -1,4 +1,4 @@
-import { NextApiRequest, NextApiResponse } from 'next'; // <--- تغییر اینجاست
+import { NextApiRequest, NextApiResponse } from 'next'; 
 import fetch from 'node-fetch';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) { // <--- و اینجا
